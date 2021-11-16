@@ -29,8 +29,8 @@ Will modify the table by adding a rank column. An example, with this table:
     | B          |  8   | 23     | 17     |
     | G          |  0   |  0     |  1     |
     | J          |  0   |  0     |  0     |
-    | C          |  4   |  9     |  8     |
-    | D          |  4   | 10     | 13     |
+    | C          |  4   | 10     |  8     |
+    | D          |  4   |  9     | 13     |
     | I          |  0   |  0     |  1     |
     | F          |  2   |  5     |  1     |
 
@@ -41,8 +41,8 @@ the result of ranking the table with data columns of C<<
     |------------+------+--------+--------+------|
     | A          | 10   | 20     | 15     |  1   |
     | B          |  8   | 23     | 17     |  2   |
-    | C          |  4   |  9     |  8     |  3   |
-    | D          |  4   | 10     | 13     |  4   |
+    | C          |  4   | 10     |  8     |  3   |
+    | D          |  4   |  9     | 13     |  4   |
     | E          |  2   |  5     |  7     |  5   |
     | F          |  2   |  5     |  1     |  6   |
     | G          |  0   |  0     |  1     | =7   |
@@ -91,19 +91,25 @@ sub add_rank_column_to_table {
 
     my $td = Data::TableData::Object->new($args{table});
     my @colidxs = map { $td->col_idx($_) } @$data_columns;
+    #use DD; print "D:colidxs "; dd \@colidxs;
 
     my $aoaos = $td->rows_as_aoaos;
     my $cmp_row = sub {
         my ($row1, $row2) = @_;
+        #use DD; print "D:comparing: "; dd {a=>$row1, b=>$row2};
+        my $res = 0;
         for (@colidxs) {
             my $cmp = $row1->[$_] <=> $row2->[$_];
             $cmp = -$cmp unless $smaller_wins;
-            return $cmp if $cmp;
+            if ($cmp) { $res = $cmp; last }
         }
-        0;
+        #print "D:comparison result: $res\n";
+        $res;
     };
-    my @sorted_aoaos = sort { $cmp_row->($a, $b) } @$aoaos;
-
+    my @sorted_indices = sort { $cmp_row->($aoaos->[$a], $aoaos->[$b]) } 0 .. $#{$aoaos};
+    #use DD; print "D:sorted_indices: "; dd \@sorted_indices;
+    #use DD; print "D:sorted table: "; dd [map {$aoaos->[$_]} @sorted_indices];
+    my @sorted_aoaos   = map { $aoaos->[$_] } @sorted_indices;
     my @ranks;
     my %num_has_rank; # key=rank, val=num of rows
     for my $rownum (0 .. $#sorted_aoaos) {
@@ -127,8 +133,17 @@ sub add_rank_column_to_table {
             if ($num_has_rank{ $ranks[$i] } > 1) { $ranks[$i] = "=$ranks[$i]" }
         }
     }
+    #use DD; print "D:ranks: "; dd \@ranks;
 
-    $td->add_col($rank_column_name, $args{rank_column_idx}, {}, \@ranks);
+    # assign the ranks to the original, unsorted rows
+    my @ranks_orig = map { undef } @ranks;
+    for my $i (0 .. $#sorted_indices) {
+        $ranks_orig[ $sorted_indices[$i] ] = $ranks[ $i ];
+        #use DD; dd \@ranks_orig;
+    }
+    #use DD; print "D:ranks_orig: "; dd \@ranks_orig;
+
+    $td->add_col($rank_column_name, $args{rank_column_idx}, {}, \@ranks_orig);
     $td;
 }
 
